@@ -1,0 +1,202 @@
+---
+title: "Ratio of CD4 and CD8 in Wilms"
+author: "AyaseEri"
+date: "2022/10/1"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = F, 
+  message = F, 
+  warning = F,
+  # cache = T,
+  fig.width=8, fig.height=6
+)
+```
+
+<style>
+  .featureplot{
+      width: 1000px;
+      height: 300px;
+      overflow-x: auto;
+      overflow-y: scroll;
+      white-space: nowrap;
+  }
+
+  .featureplot img{
+     max-width: none;
+     max-height: none;
+  }
+</style>
+
+
+```{r}
+work.path <- "/share/genomics/cwx/External/xlu/wilms";setwd(work.path)
+data.path <- file.path(work.path, "InputData")
+res.path <- file.path(work.path, "Results")
+code.path <- file.path(work.path, "Codes")
+fig.path <- file.path(work.path, "Figures")
+report.path <- file.path(work.path, "Reports")
+```
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(data.table)
+library(cowplot)
+library(magrittr)
+library(DT)
+```
+
+```{r}
+metadata <- readRDS(file.path(res.path, "metadata.rds"))
+label <- read.table(file.path(res.path, "label.txt"), sep = "\t", header = T)
+
+seu <- readRDS(file.path(res.path, "seu.rds"))
+tmp <- label[label$from %in% seu$Cell_type1, ]
+seu$Cell_type1 <- plyr::mapvalues(x = seu$Cell_type1,
+                                  from = tmp$from,
+                                  to = tmp$to1)
+markers <- readRDS(file.path(res.path, "markers.rds"))
+anno <- read.table(file.path(res.path, "anno.txt"), sep = "\t", header = T)
+
+T.seu <- readRDS(file.path(res.path, "T.seu.rds"))
+T.markers <- readRDS(file.path(res.path, "T.markers.rds"))
+T.anno <- read.table(file.path(res.path, "T.anno.txt"), sep = "\t", header = T)
+tmp <- label[label$from %in% T.seu$Cell_type1, ]
+T.seu$Cell_type1 <- plyr::mapvalues(x = T.seu$Cell_type1,
+                                  from = tmp$from,
+                                  to = tmp$to2)
+
+plot.marker <- c("PECAM1", "VWF1", "EPCAM", "KRT19", 
+                 "PTPRC", "CD3D", "CD4", "CD8A", "NKG7", 
+                 "CD79A", "MS4A1", 
+                 "CD14", "MRC1", "S100A8",
+                 "PTGDS", "DCN", 
+                 "TPSAB1")
+T.marker <- c("CD3D", "CD3E", "CD4", "IL7R",
+              "CD8A", "CD8B", "FOXP3", "GZMB", "NKG7",
+              "XCL1", "FCGR3A", "KLRD1")
+
+GetRatio <- function(patient, var, g1, g2){
+  sum(T.seu$Experiment == patient & unlist(T.seu[[var]]) %in% g1)/sum(T.seu$Experiment == patient & unlist(T.seu[[var]]) %in% g2)
+}
+```
+
+## 1: Annotation of Wilms Dataset
+
+There were `r nrow(metadata)` cells passing the quality control in the article, and `r ncol(seu)` of them were sampled from wilms patients. It will be included in this analysis if the cell passed the QC and were from wilms patients.
+
+The first round of annotation followed the pipeline as "clustering --> finding differentially expressed gene --> manual annotation". As the author instructed, the batch effect between different 10X channels was removed via "harmony". 
+
+```{r}
+DimPlot(seu, group.by = "celltypes", reduction = "umap_harmony", label = T) +
+  ggtitle("UMAP plot with manual annotation")
+DimPlot(seu, group.by = "Channel10X", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by channel)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+
+<details>
+<summary>distribution of canonical marker</summary>
+<div class="featureplot">
+```{r}
+plot.cache <- FeaturePlot(seu, features = plot.marker, reduction = "umap_harmony", combine = F)
+plot.cache <- lapply(plot.cache, function(x){
+  x + NoLegend() + NoAxes()
+})
+plot_grid(plotlist = plot.cache, ncol = 4)
+```
+</details>
+
+<details>
+<summary>differentially expressed genes in each seurat_cluster</summary>
+```{r}
+markers$celltypes <- anno$celltypes[match(markers$cluster, anno$label)]
+datatable(data = markers, class = "cell-border stripe", rownames = F, caption = "Marker of each seurat cluster",
+              filter = "top", editable = T, extensions = c("Select", "SearchBuilder")) %>%
+   formatSignif(columns=c("p_val", "avg_log2FC", "p_val_adj"), digits=3)
+```
+</details>
+
+<details>
+<summary>Annotation from the author</summary>
+```{r}
+DimPlot(seu, group.by = "Cell_type1", reduction = "umap_harmony")
+```
+</details>
+
+## 2: Annotation of T cell in Wilms Dataset
+
+### 2.1: Manual Annotation
+
+The ratio of CD4/CD8 Tcell based on manual annotation is (batch effect has been removed):  
+**Wilms1: `r GetRatio("Wilms1", "celltypes", "CD4 T", "CD8 T")`**  
+**Wilms2: `r GetRatio("Wilms2", "celltypes", "CD4 T", "CD8 T")`**  
+**Wilms3: `r GetRatio("Wilms3", "celltypes", "CD4 T", "CD8 T")`**  
+
+```{r}
+DimPlot(T.seu, group.by = "celltypes", reduction = "umap_harmony", label = T) +
+  ggtitle("UMAP plot with manual annotation")
+```
+<details>
+<summary>UMAP plot with batch effect removed</summary>
+```{r}
+DimPlot(T.seu, group.by = "Channel10X", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by channel)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+</details>
+
+<details>
+<summary>distribution of canonical marker</summary>
+<div class="featureplot">
+```{r}
+plot.cache <- FeaturePlot(T.seu, features = T.marker, reduction = "umap_harmony", combine = F)
+plot.cache <- lapply(plot.cache, function(x){
+  x + NoLegend() + NoAxes()
+})
+plot_grid(plotlist = plot.cache, ncol = 4)
+```
+</details>
+
+<details>
+<summary>differentially expressed genes in each seurat_cluster</summary>
+```{r}
+T.markers$celltypes <- T.anno$celltypes[match(T.markers$cluster, T.anno$label)]
+datatable(data = T.markers, class = "cell-border stripe", rownames = F, caption = "Marker of each seurat cluster",
+              filter = "top", editable = T, extensions = c("Select", "SearchBuilder")) %>%
+   formatSignif(columns=c("p_val", "avg_log2FC", "p_val_adj"), digits=3)
+```
+</details>
+
+
+### 2.2: SingleR Annotation
+
+The ratio of CD4/CD8 Tcell based on SingleR annotation is :  
+**Wilms1: `r GetRatio("Wilms1", "SingleR.anno", "T cells, CD4+", "T cells, CD8+")`**  
+**Wilms2: `r GetRatio("Wilms2", "SingleR.anno", "T cells, CD4+", "T cells, CD8+")`**  
+**Wilms3: `r GetRatio("Wilms3", "SingleR.anno", "T cells, CD4+", "T cells, CD8+")`**  
+
+```{r}
+DimPlot(T.seu, group.by = "SingleR.anno", reduction = "umap_harmony")
+```
+
+
+### 2.3: Annotation from raw article
+
+The ratio is calculated as the sum of T regulatory and Th cell divide by the count of CD8 T cell.  
+**Wilms1: `r GetRatio("Wilms1", "Cell_type1", c("T regulatory", "Th cell"), "CD8 T cell")`**  
+**Wilms2: `r GetRatio("Wilms2", "Cell_type1", c("T regulatory", "Th cell"), "CD8 T cell")`**  
+**Wilms3: `r GetRatio("Wilms3", "Cell_type1", c("T regulatory", "Th cell"), "CD8 T cell")`** 
+
+```{r}
+DimPlot(T.seu, group.by = "Cell_type1", reduction = "umap_harmony")
+```
+

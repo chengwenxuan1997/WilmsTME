@@ -1,0 +1,390 @@
+---
+title: "celltypes annotation and proportion in Wilms"
+author: "AyaseEri"
+date: "2022/10/19"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = F, 
+  message = F, 
+  warning = F,
+  # cache = T,
+  fig.width=8, fig.height=6
+)
+```
+
+<style>
+  .featureplot{
+      width: 1000px;
+      height: 300px;
+      overflow-x: auto;
+      overflow-y: scroll;
+      white-space: nowrap;
+  }
+
+  .featureplot img{
+     max-width: none;
+     max-height: none;
+  }
+</style>
+
+
+```{r}
+# work.path <- "/share/genomics/cwx/External/xlu/wilms";setwd(work.path)
+work.path <- "i:/genomicdata/External/Xlu/Wilms";setwd(work.path)
+data.path <- file.path(work.path, "InputData")
+res.path <- file.path(work.path, "Results")
+code.path <- file.path(work.path, "Codes")
+fig.path <- file.path(work.path, "Figures")
+report.path <- file.path(work.path, "Reports")
+```
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(data.table)
+library(cowplot)
+library(magrittr)
+library(DT)
+library(kableExtra)
+library(formattable)
+options(digits = 2)
+```
+
+```{r}
+metadata <- readRDS(file.path(res.path, "metadata.rds"))
+label <- read.table(file.path(res.path, "label.txt"), sep = "\t", header = T)
+
+seu <- readRDS(file.path(res.path, "seu.rds"))
+seu$celltypes[seu$celltypes == "unknown"] <- NA
+tmp <- label[label$from %in% seu$Cell_type1, ]
+seu$Cell_type1 <- plyr::mapvalues(x = seu$Cell_type1,
+                                  from = tmp$from,
+                                  to = tmp$to1)
+tmp <- as.data.frame(table(seu$SingleR.main.anno))
+tmp <- tmp[tmp$Freq>100, ]
+seu$SingleR.main.anno[!seu$SingleR.main.anno %in% tmp$Var1] <- NA
+markers <- readRDS(file.path(res.path, "markers.rds"))
+anno <- read.table(file.path(res.path, "anno.txt"), sep = "\t", header = T)
+
+T.seu <- readRDS(file.path(res.path, "T.seu.rds"))
+T.markers <- readRDS(file.path(res.path, "T.markers.rds"))
+T.anno <- read.table(file.path(res.path, "T.anno.txt"), sep = "\t", header = T)
+tmp <- label[label$from %in% T.seu$Cell_type1, ]
+T.seu$Cell_type1 <- plyr::mapvalues(x = T.seu$Cell_type1,
+                                  from = tmp$from,
+                                  to = tmp$to2)
+tmp <- as.data.frame(table(T.seu$SingleR.main.anno))
+tmp <- tmp[tmp$Freq>50, ]
+T.seu$SingleR.main.anno[!T.seu$SingleR.main.anno %in% tmp$Var1] <- NA
+
+Mye.seu <- readRDS(file.path(res.path, "Mye.seu.rds"))
+Mye.markers <- readRDS(file.path(res.path, "Mye.markers.rds"))
+Mye.anno <- read.table(file.path(res.path, "Mye.anno.txt"), sep = "\t", header = T)
+tmp <- label[label$from %in% Mye.seu$Cell_type1, ]
+Mye.seu$Cell_type1 <- plyr::mapvalues(x = Mye.seu$Cell_type1,
+                                      from = tmp$from,
+                                      to = tmp$to2)
+tmp <- as.data.frame(table(Mye.seu$SingleR.main.anno))
+tmp <- tmp[tmp$Freq>20, ]
+Mye.seu$SingleR.main.anno[!Mye.seu$SingleR.main.anno %in% tmp$Var1] <- NA
+
+plot.marker <- c("PECAM1", "VWF1", "EPCAM", "KRT19", 
+                 "PTPRC", "CD3D", "CD4", "CD8A", "NKG7", 
+                 "CD79A", "MS4A1", 
+                 "CD14", "MRC1", "S100A8",
+                 "PTGDS", "DCN", 
+                 "TPSAB1")
+T.marker <- c("CD3D", "CD3E", "CD4", "IL7R",
+              "CD8A", "CD8B", "FOXP3", "GZMB", "NKG7",
+              "XCL1", "FCGR3A", "KLRD1")
+Mye.marker <- c("CD14", "CD16", "CD86", "LYZ", "FCN1", "VCAN", "S100A8", "S100A9",
+                          "CD68", "CD86", "TLR4", "VSIR", "CCR7", "CD163", "CD1C",
+                          "FCER1A", "CLEC9A", "CLEC10A", "FLT3", "CD79A", "MS4A1")
+
+GetRatio <- function(patient, g1, g2){
+  sum(tbl[g1, patient])/sum(tbl[g2, patient])
+}
+
+Patient <- data.frame("Wilms2" = 8, "Wilms3" = 30, "Wilms1" = 50, row.names = "Age(month)")
+```
+
+
+## 1: Results
+
+```{r}
+selected.columns <- c("Experiment", "Cell_type1", "celltypes", "SingleR.main.anno")
+cell.info <- seu@meta.data[, selected.columns]
+cell.info <- cell.info[!cell.info$celltypes %in% c("T cell", "NK cell", "Myeloid"), ]
+cell.info$celltypes <- as.character(cell.info$celltypes)
+T.cell.info <- T.seu@meta.data[, selected.columns]
+Mye.cell.info <- Mye.seu@meta.data[, selected.columns]
+cell.info <- rbind(cell.info, T.cell.info, Mye.cell.info)
+cell.info$Cell_type1[cell.info$Cell_type1 == "T cell"] = NA
+cell.info$SingleR.main.anno[cell.info$SingleR.main.anno == "Hepatocytes"] = NA
+cell.info$SingleR.main.anno[cell.info$SingleR.main.anno == "T_cells"] = NA
+cell.info$SingleR.main.anno[cell.info$SingleR.main.anno == "NK_cell"] = "NK cells"
+```
+
+## {.tabset .tabset-pills}
+
+### Manual Annotation
+
+```{r}
+tbl <- as.data.frame.matrix(table(cell.info$celltypes, cell.info$Experiment))
+tbl <- tbl[, colnames(Patient)]
+tbl.ratio <- as.matrix(tbl) %*% diag(1/colSums(tbl)) * 100
+colnames(tbl.ratio) <- colnames(tbl)
+tbl <- rbind(Patient, tbl); tbl.ratio <- rbind(Patient[2, ], tbl.ratio)
+```
+
+Cells identified as NA or unknown were not included when calculating the sum of cells from each patient. The ratio of CD4/CD8 is calculate as the number of "CD4 T memory" and "CD4 T regulatory" divided by "CD8 T".  
+Wilms2: `r GetRatio("Wilms2", c("CD4 T memory", "CD4 T regulatory"), "CD8 T")`  
+Wilms3: `r GetRatio("Wilms3", c("CD4 T memory", "CD4 T regulatory"), "CD8 T")`  
+Wilms1: `r GetRatio("Wilms1", c("CD4 T memory", "CD4 T regulatory"), "CD8 T")`  
+
+```{r}
+tbl <- cbind(tbl, tbl.ratio)
+tbl <- rbind(tbl, "sum" = colSums(tbl[-1, ])) 
+tbl %>% kbl(escape = F) %>% kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c("", "Cell Number" = 3, "Cell Proportion (%)" = 3))
+```
+
+
+### SingleR Annotation
+```{r}
+tbl <- as.data.frame.matrix(table(cell.info$SingleR.main.anno, cell.info$Experiment))
+tbl <- tbl[, colnames(Patient)]
+tbl.ratio <- as.matrix(tbl) %*% diag(1/colSums(tbl[, ])) * 100
+colnames(tbl.ratio) <- colnames(tbl)
+tbl <- rbind(Patient, tbl); tbl.ratio <- rbind(Patient[1, ], tbl.ratio)
+```
+
+Cells identified as NA or unknown were not included when calculating the sum of cells from each patient. The ratio of CD4/CD8 is calculate as the number of "T cells, CD4+" divided by "T cells, CD8+".  
+Wilms2: `r GetRatio("Wilms2", "T cells, CD4+", "T cells, CD8+")`  
+Wilms3: `r GetRatio("Wilms3", "T cells, CD4+", "T cells, CD8+")`  
+Wilms1: `r GetRatio("Wilms1", "T cells, CD4+", "T cells, CD8+")`  
+
+```{r}
+tbl <- cbind(tbl, tbl.ratio)
+tbl <- rbind(tbl, "sum" = colSums(tbl[-1, ])) 
+tbl %>% kbl(escape = F) %>% kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c("", "Cell Number" = 3, "Cell Proportion (%)" = 3))
+```
+
+
+### Annotation from raw article
+```{r}
+tbl <- as.data.frame.matrix(table(cell.info$Cell_type1, cell.info$Experiment))
+tbl <- tbl[, colnames(Patient)]
+tbl.ratio <- as.matrix(tbl) %*% diag(1/colSums(tbl[, ]))*100
+colnames(tbl.ratio) <- colnames(tbl)
+tbl <- rbind(Patient, tbl); tbl.ratio <- rbind(Patient, tbl.ratio)
+```
+Cells identified as NA or unknown were not included when calculating the sum of cells from each patient. The ratio of CD4/CD8 is calculate as the number of "T regulatory" and "Th cell" divided by "CD8 T".  
+Wilms2: `r GetRatio("Wilms2", c("T regulatory", "Th cell"), "CD8 T")`  
+Wilms3: `r GetRatio("Wilms3", c("T regulatory", "Th cell"), "CD8 T")`  
+Wilms1: `r GetRatio("Wilms1", c("T regulatory", "Th cell"), "CD8 T")`  
+
+```{r}
+tbl <- cbind(tbl, tbl.ratio)
+tbl <- rbind(tbl, "sum" = colSums(tbl[-1, ])) 
+tbl %>% kbl(escape = F) %>% kable_classic(full_width = F, html_font = "Cambria") %>%
+  add_header_above(c("", "Cell Number" = 3, "Cell Proportion (%)" = 3))
+```
+
+
+## 2: Annotation of Wilms Dataset
+
+There were `r nrow(metadata)` cells passing the quality control in the article, and `r ncol(seu)` of them were sampled from wilms patients. It will be included in this analysis if the cell passed the QC and were from wilms patients.
+
+The first round of annotation followed the pipeline as "clustering --> finding differentially expressed gene --> manual annotation". As the author instructed, the batch effect between different 10X channels was removed via "harmony". 
+
+```{r}
+DimPlot(seu, group.by = "celltypes", reduction = "umap_harmony", label = T) +
+  ggtitle("UMAP plot with manual annotation")
+```
+
+<details>
+<summary>UMAP plot with batch effect removed</summary>
+```{r}
+DimPlot(seu, group.by = "Channel10X", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by channel)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+</details>
+
+<details>
+<summary>distribution of canonical marker</summary>
+<div class="featureplot">
+```{r}
+plot.cache <- FeaturePlot(seu, features = plot.marker, reduction = "umap_harmony", combine = F)
+plot.cache <- lapply(plot.cache, function(x){
+  x + NoLegend() + NoAxes()
+})
+plot_grid(plotlist = plot.cache, ncol = 4)
+```
+</details>
+
+<details>
+<summary>unsupervised clustering (resolution = 0.4, npc = 15)</summary>
+```{r}
+DimPlot(seu, group.by = "seurat_clusters", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by seurat_clusters)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+</details>
+
+<details>
+<summary>differentially expressed genes in each seurat_cluster</summary>
+```{r}
+markers$celltypes <- anno$celltypes[match(markers$cluster, anno$label)]
+datatable(data = markers, class = "cell-border stripe", rownames = F, caption = "Marker of each seurat cluster",
+              filter = "top", editable = T, extensions = c("Select", "SearchBuilder")) %>%
+   formatSignif(columns=c("p_val", "avg_log2FC", "p_val_adj"), digits=3)
+```
+</details>
+
+<details>
+<summary>Annotation from the author</summary>
+```{r}
+DimPlot(seu, group.by = "Cell_type1", reduction = "umap_harmony")
+```
+</details>
+
+## 3: Annotation of T cell in Wilms Dataset
+
+## {.tabset .tabset-pills}
+### Manual Annotation
+```{r}
+DimPlot(T.seu, group.by = "celltypes", reduction = "umap_harmony", label = T) +
+  ggtitle("UMAP plot with manual annotation")
+```
+<details>
+<summary>UMAP plot with batch effect removed</summary>
+```{r}
+DimPlot(T.seu, group.by = "Channel10X", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by channel)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+</details>
+
+<details>
+<summary>distribution of canonical marker</summary>
+<div class="featureplot">
+```{r}
+plot.cache <- FeaturePlot(T.seu, features = T.marker, reduction = "umap_harmony", combine = F)
+plot.cache <- lapply(plot.cache, function(x){
+  x + NoLegend() + NoAxes()
+})
+plot_grid(plotlist = plot.cache, ncol = 4)
+```
+</details>
+
+<details>
+<summary>unsupervised clustering (resolution = 1.2, npc = 30)</summary>
+```{r}
+DimPlot(T.seu, group.by = "seurat_clusters", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by seurat_clusters)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+</details>
+
+<details>
+<summary>differentially expressed genes in each seurat_cluster</summary>
+```{r}
+T.markers$celltypes <- T.anno$celltypes[match(T.markers$cluster, T.anno$label)]
+datatable(data = T.markers, class = "cell-border stripe", rownames = F, caption = "Marker of each seurat cluster",
+              filter = "top", editable = T, extensions = c("Select", "SearchBuilder")) %>%
+   formatSignif(columns=c("p_val", "avg_log2FC", "p_val_adj"), digits=3)
+```
+</details>
+
+
+### SingleR Annotation
+
+```{r}
+DimPlot(T.seu, group.by = "SingleR.main.anno", reduction = "umap_harmony")
+```
+
+
+### Annotation from raw article
+
+```{r}
+DimPlot(T.seu, group.by = "Cell_type1", reduction = "umap_harmony")
+```
+
+## 4: Annotation of Myeloid cell
+
+## {.tabset .tabset-pills}
+
+### Manual Annotation
+
+```{r}
+DimPlot(Mye.seu, group.by = "celltypes", reduction = "umap_harmony", label = T) +
+  ggtitle("UMAP plot with manual annotation")
+```
+<details>
+<summary>UMAP plot with batch effect removed</summary>
+```{r}
+DimPlot(Mye.seu, group.by = "Channel10X", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by channel)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+</details>
+
+<details>
+<summary>distribution of canonical marker</summary>
+<div class="featureplot">
+```{r}
+plot.cache <- FeaturePlot(Mye.seu, features = Mye.marker, reduction = "umap_harmony", combine = F)
+plot.cache <- lapply(plot.cache, function(x){
+  x + NoLegend() + NoAxes()
+})
+plot_grid(plotlist = plot.cache, ncol = 4)
+```
+</details>
+
+<details>
+<summary>unsupervised clustering (resolution = 1.2, npc = 30)</summary>
+```{r}
+DimPlot(Mye.seu, group.by = "seurat_clusters", reduction = "umap_harmony", label = T) + 
+  ggtitle(label = "UMAP plot with batch effect removed",
+          subtitle = "(colored by seurat_clusters)") +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+</details>
+
+<details>
+<summary>differentially expressed genes in each seurat_cluster</summary>
+```{r}
+Mye.markers$celltypes <- Mye.anno$celltypes[match(Mye.markers$cluster, Mye.anno$label)]
+datatable(data = Mye.markers, class = "cell-border stripe", rownames = F, caption = "Marker of each seurat cluster",
+              filter = "top", editable = T, extensions = c("Select", "SearchBuilder")) %>%
+   formatSignif(columns=c("p_val", "avg_log2FC", "p_val_adj"), digits=3)
+```
+</details>
+
+
+### SingleR Annotation
+
+```{r}
+DimPlot(Mye.seu, group.by = "SingleR.main.anno", reduction = "umap_harmony")
+```
+
+
+### Annotation from raw article
+
+```{r}
+DimPlot(Mye.seu, group.by = "Cell_type1", reduction = "umap_harmony")
+```
